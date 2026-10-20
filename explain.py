@@ -32,7 +32,7 @@ LANGUAGES = {"English": "en-IN", "हिन्दी (Hindi)": "hi-IN", "मर�
 
 FEATURE_LABEL = {
     "Age": "Age", "RestingBP": "Resting blood pressure", "Cholesterol": "Cholesterol",
-    "MaxHR": "Maximum heart rate", "Oldpeak": "ST depression (Oldpeak)", "Sex": "Sex",
+    "MaxHR": "Maximum heart rate", "Oldpeak": "ST depression (Oldpeak)", "Sex": "Gender",
     "ChestPainType": "Chest pain type", "FastingBS": "Fasting blood sugar",
     "RestingECG": "Resting ECG", "ExerciseAngina": "Exercise-induced angina",
     "ST_Slope": "ST slope",

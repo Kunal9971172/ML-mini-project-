@@ -95,7 +95,7 @@ with tab_predict:
         c1, c2, c3 = st.columns(3)
         with c1:
             age = st.slider("Age", 18, 100, 50)
-            sex = st.selectbox("Sex", ["M", "F"], format_func={"M": "Male", "F": "Female"}.get)
+            sex = st.selectbox("Gender", ["M", "F"], format_func={"M": "Male", "F": "Female"}.get)
             chest_pain = st.selectbox("Chest pain type", ["ASY", "NAP", "ATA", "TA"], format_func={
                 "ASY": "ASY – Asymptomatic", "NAP": "NAP – Non-anginal pain",
                 "ATA": "ATA – Atypical angina", "TA": "TA – Typical angina"}.get)
