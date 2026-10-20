@@ -13,6 +13,7 @@ import joblib
 import pandas as pd
 import streamlit as st
 
+import explain
 import train
 
 ROOT = Path(__file__).resolve().parent
@@ -65,6 +66,24 @@ def risk_flags(d):
 
 model, metrics = load_model()
 
+with st.sidebar:
+    st.header("🌐 Language / भाषा")
+    lang_name = st.radio("Show the report in", list(explain.LANGUAGES), index=0)
+    lang_code = explain.LANGUAGES[lang_name]
+    api_key = explain.get_api_key()
+    st.caption("Translation and voice are powered by Sarvam AI.")
+    voice_on = st.toggle("🔊 Read the explanation aloud", value=True)
+
+
+@st.cache_data(show_spinner=False)
+def cached_speech(text, target, key):
+    return explain.text_to_speech(text, target, key)
+
+
+@st.cache_data(show_spinner=False)
+def cached_translation(report_json, target, key):
+    return explain.translate_report(json.loads(report_json), target, key)
+
 st.markdown('<div class="hero"><h1>❤️ Heart Disease Risk Predictor</h1>'
             '<p>Enter the clinical details below. The model returns a probability, not just yes/no.</p></div>',
             unsafe_allow_html=True)
@@ -97,34 +116,68 @@ with tab_predict:
         submitted = st.form_submit_button("Predict risk", type="primary", use_container_width=True)
 
     if submitted:
-        row = {"Age": age, "RestingBP": resting_bp, "Cholesterol": cholesterol, "MaxHR": max_hr,
-               "Oldpeak": oldpeak, "Sex": sex, "ChestPainType": chest_pain, "FastingBS": fasting_bs,
-               "RestingECG": resting_ecg, "ExerciseAngina": exercise_angina, "ST_Slope": st_slope}
-        proba = float(model.predict_proba(pd.DataFrame([row])[train.NUMERIC + train.CATEGORICAL])[0, 1])
+        st.session_state["row"] = {
+            "Age": age, "RestingBP": resting_bp, "Cholesterol": cholesterol, "MaxHR": max_hr,
+            "Oldpeak": oldpeak, "Sex": sex, "ChestPainType": chest_pain, "FastingBS": fasting_bs,
+            "RestingECG": resting_ecg, "ExerciseAngina": exercise_angina, "ST_Slope": st_slope}
 
-        if proba >= 0.65:
-            cls, label = "high", "High risk of heart disease"
-        elif proba >= 0.35:
-            cls, label = "mid", "Moderate / borderline risk"
-        else:
-            cls, label = "low", "Low risk of heart disease"
+    # The last result stays on screen when the language is switched in the sidebar.
+    if "row" in st.session_state:
+        row = st.session_state["row"]
+        proba, contrib = explain.explain_prediction(model, row)
+        report = explain.build_report(row, proba, contrib)
+
+        shown, note = report, None
+        if lang_code != "en-IN":
+            if not api_key:
+                note = "Translation is not configured on this server. Showing English."
+            else:
+                try:
+                    with st.spinner("Translating with Sarvam AI..."):
+                        shown = cached_translation(json.dumps(report), lang_code, api_key)
+                except Exception as e:  # network / invalid key
+                    note = f"Translation failed ({e}). Showing English."
+        if note:
+            st.warning(note)
+
+        cls = "high" if proba >= 0.65 else "mid" if proba >= 0.35 else "low"
+
+        st.markdown(f"#### 📝 {shown['inputs_title']}")
+        st.info(shown["inputs"])
 
         left, right = st.columns([1, 1])
         with left:
-            st.markdown(f'<div class="card {cls}"><p>Estimated probability</p><h2>{proba:.0%}</h2>'
-                        f'<p><b>{label}</b></p><div class="bar"><div style="width:{proba*100:.0f}%"></div>'
+            st.markdown(f'<div class="card {cls}"><p>{shown["result_title"]}</p><h2>{proba:.0%}</h2>'
+                        f'<p><b>{shown["result"]}</b></p><div class="bar"><div style="width:{proba*100:.0f}%"></div>'
                         f'</div></div>', unsafe_allow_html=True)
             st.caption("Bands: below 35% low · 35–65% moderate · above 65% high.")
         with right:
-            flags = risk_flags(row)
-            st.subheader("Risk factors in your inputs")
-            if flags:
-                for f in flags:
-                    st.markdown(f"- ⚠️ {f}")
-            else:
-                st.markdown("- ✅ No common risk factors flagged")
+            st.markdown(f"**🔺 {shown['up_title']}**")
+            for line in shown["up"]:
+                st.markdown(f"- ⚠️ {line}")
+            st.markdown(f"**🔻 {shown['down_title']}**")
+            for line in shown["down"]:
+                st.markdown(f"- ✅ {line}")
 
-    st.info("Educational demo only. This is not a diagnosis – please consult a doctor.", icon="ℹ️")
+        st.markdown("**Why this prediction? (effect of each input on the risk, in percentage points)**")
+        chart = contrib.assign(feature=contrib.feature.map(explain.FEATURE_LABEL),
+                               points=contrib.contribution * 100).set_index("feature")[["points"]]
+        st.bar_chart(chart.iloc[::-1], horizontal=True)
+        st.caption("Right of zero = pushes risk up, left = pushes risk down, compared with a typical "
+                   "patient in the training data.")
+        st.info(shown["disclaimer"], icon="ℹ️")
+
+        if voice_on:
+            if not api_key:
+                st.caption("Voice is not configured on this server.")
+            else:
+                try:
+                    with st.spinner("Generating voice..."):
+                        audio = cached_speech(explain.speech_script(shown), lang_code, api_key)
+                    st.markdown("**🔊 Listen to the explanation**")
+                    st.audio(audio, format="audio/wav", autoplay=True)
+                except Exception as e:
+                    st.warning(f"Voice could not be generated ({e}).")
 
 with tab_model:
     if not metrics:
